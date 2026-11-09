@@ -1,10 +1,13 @@
 package evm
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -28,8 +31,36 @@ type AccountProof struct {
 
 // StorageProof is the proof of one storage slot within an AccountProof.
 type StorageProof struct {
-	Key   common.Hash     `json:"key"`
+	Key   StorageKey      `json:"key"`
 	Proof []hexutil.Bytes `json:"proof"`
+}
+
+// StorageKey is a slot as eth_getProof echoes it: 32 bytes when the request gave 32 bytes, otherwise a quantity such as
+// "0x35" (internal/ethapi/api.go:424-433 @ go-ethereum v1.17.10).
+type StorageKey common.Hash
+
+// UnmarshalJSON accepts a 0x-prefixed hex string of up to 32 bytes and left-pads it.
+func (k *StorageKey) UnmarshalJSON(input []byte) error {
+	var s string
+	if err := json.Unmarshal(input, &s); err != nil {
+		return err
+	}
+	digits, ok := strings.CutPrefix(s, "0x")
+	if !ok || digits == "" {
+		return fmt.Errorf("storage key %q: not a 0x-prefixed hex string", s)
+	}
+	if len(digits)%2 == 1 {
+		digits = "0" + digits
+	}
+	b, err := hex.DecodeString(digits)
+	if err != nil {
+		return fmt.Errorf("storage key %q: %w", s, err)
+	}
+	if len(b) > common.HashLength {
+		return fmt.Errorf("storage key %q: longer than 32 bytes", s)
+	}
+	*k = StorageKey(common.BytesToHash(b))
+	return nil
 }
 
 // stateProof is the RLP form of a state proof: the account nodes, then each slot with its storage nodes.
@@ -47,7 +78,7 @@ type slotProof struct {
 func EncodeStateProof(p AccountProof) ([]byte, error) {
 	sp := stateProof{Account: nodeBytes(p.AccountProof), Storage: make([]slotProof, len(p.StorageProof))}
 	for i, s := range p.StorageProof {
-		sp.Storage[i] = slotProof{Slot: s.Key, Nodes: nodeBytes(s.Proof)}
+		sp.Storage[i] = slotProof{Slot: common.Hash(s.Key), Nodes: nodeBytes(s.Proof)}
 	}
 	return rlp.EncodeToBytes(sp)
 }
@@ -73,6 +104,10 @@ func VerifyStateCapture(stateRoot common.Hash, contract common.Address, slot com
 	var account types.StateAccount
 	if err := rlp.DecodeBytes(accountRLP, &account); err != nil {
 		return nil, fmt.Errorf("account %s: %w: %w", contract, ErrProof, err)
+	}
+	// Nodes send no storage nodes for an account with empty storage (internal/ethapi/api.go:413-436 @ go-ethereum v1.17.10).
+	if account.Root == types.EmptyRootHash {
+		return new(big.Int), nil
 	}
 	valueRLP, err := trie.VerifyProof(account.Root, crypto.Keccak256(slot.Bytes()), proofSet(sp.Storage[i].Nodes))
 	if err != nil {

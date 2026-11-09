@@ -32,7 +32,7 @@ func TestEncodeStateProof(t *testing.T) {
 	t.Parallel()
 	p := AccountProof{
 		AccountProof: []hexutil.Bytes{{0x01}, {0x02, 0x03}},
-		StorageProof: []StorageProof{{Key: common.HexToHash("0x35"), Proof: []hexutil.Bytes{{0x04}}}},
+		StorageProof: []StorageProof{{Key: StorageKey(common.HexToHash("0x35")), Proof: []hexutil.Bytes{{0x04}}}},
 	}
 	want := hexBytes(t, "ea"+"c401820203"+"e4"+"e3"+"a0"+strings.Repeat("00", 31)+"35"+"c104")
 	got, err := EncodeStateProof(p)
@@ -93,6 +93,58 @@ func TestVerifyStateCaptureRejects(t *testing.T) {
 		}
 		if _, err := VerifyStateCapture(tc.stateRoot, f.Contract, tc.slot, proof); !errors.Is(err, tc.wantErr) {
 			t.Errorf("%s: VerifyStateCapture = %v, want %v", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+// The account is the zero address, which exists and has no storage. The slot was requested as the quantity "0x35", so
+// the node echoed it in that form.
+func TestVerifyStateCaptureEmptyStorage(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join("testdata", "ethereum-empty-storage-proof.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		StateRoot common.Hash    `json:"stateRoot"`
+		Account   common.Address `json:"account"`
+		Proof     AccountProof   `json:"proof"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := EncodeStateProof(f.Proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := VerifyStateCapture(f.StateRoot, f.Account, common.HexToHash("0x35"), proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Sign() != 0 {
+		t.Fatalf("VerifyStateCapture = %s, want 0", got)
+	}
+}
+
+func TestStorageKeyUnmarshal(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		input   string
+		want    common.Hash
+		wantErr bool
+	}{
+		{`"0x35"`, common.HexToHash("0x35"), false},
+		{`"0x5"`, common.HexToHash("0x05"), false},
+		{`"0x` + strings.Repeat("00", 31) + `35"`, common.HexToHash("0x35"), false},
+		{`"0x` + strings.Repeat("00", 32) + `35"`, common.Hash{}, true},
+		{`"35"`, common.Hash{}, true},
+		{`"0x"`, common.Hash{}, true},
+	}
+	for _, tc := range cases {
+		var k StorageKey
+		err := json.Unmarshal([]byte(tc.input), &k)
+		if (err != nil) != tc.wantErr || common.Hash(k) != tc.want {
+			t.Errorf("Unmarshal(%s) = %s, %v, want %s, error %v", tc.input, common.Hash(k), err, tc.want, tc.wantErr)
 		}
 	}
 }
