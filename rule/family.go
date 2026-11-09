@@ -2,20 +2,13 @@ package rule
 
 import (
 	"crypto/sha256"
-	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/shinzonetwork/shinzo-evidence-codec/statement"
-	"github.com/shinzonetwork/shinzo-evidence-codec/trust"
 )
 
-// Errors returned by New.
-var (
-	ErrUnknownFamily = errors.New("unknown chain family")
-	ErrSettings      = errors.New("chain or asset settings are not valid for the family")
-)
-
-// family checks what differs between chain families. Its constructor validates the chain's settings once.
+// family checks what differs between chain families. Its constructor validates the chain ID and assets once.
 type family interface {
 	// header checks raw against the statement's hash, number, parent and time, and returns the checks bound to that
 	// block.
@@ -25,15 +18,14 @@ type family interface {
 // blockChecks checks records and state captures against one block's commitments. A family whose chain does not
 // commit to a part still decodes it, so its count, root or value is compared, and skips only the proof.
 type blockChecks interface {
-	records(asset trust.Asset, records, proof []byte) (count uint64, root [sha256.Size]byte, err error)
-	capture(asset trust.Asset, proof []byte) (value string, err error)
+	records(asset Asset, records, proof []byte) (count uint64, root [sha256.Size]byte, err error)
+	capture(asset Asset, proof []byte) (value string, err error)
 }
 
-const familyEVM = "evm"
-
-func newFamily(c trust.Chain) (family, error) {
-	if c.Family == familyEVM {
+// newFamily picks the family by the chain ID's CAIP-2 namespace.
+func newFamily(c Config) (family, error) {
+	if namespace, _, _ := strings.Cut(c.Chain, ":"); namespace == "eip155" {
 		return newEVM(c)
 	}
-	return nil, fmt.Errorf("%w: %q", ErrUnknownFamily, c.Family)
+	return nil, fmt.Errorf("%w: %q", ErrUnsupportedChain, c.Chain)
 }

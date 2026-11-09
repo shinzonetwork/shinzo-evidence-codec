@@ -10,10 +10,9 @@ Go library for the block statements Shinzo generators sign and the evidence host
 | `sig` | ES256K signature verification over a statement |
 | `merkle` | RFC 9162 Merkle tree hash with SHA-256 |
 | `evm` | EVM headers and block time, receipt and transaction records with their proofs, account and storage proofs |
-| `trust` | Trust file parser: per chain, the signer sets, how many signers must agree, and the tracked assets |
-| `rule` | Decides whether enough listed signers agree on a block, checking each signed claim against the documents held for it |
+| `rule` | Decides whether enough of a chain's listed signers agree on a block, checking each signed claim against the documents held for it |
 
-`rule` implements the `evm` chain family (Ethereum, BSC and other `eip155` chains). `rule.New` refuses a chain with any other family.
+`rule` picks a chain's family by its CAIP-2 namespace. It implements the `evm` family (Ethereum, BSC and other `eip155` chains), and `rule.New` refuses any other namespace.
 
 ## Test vectors
 

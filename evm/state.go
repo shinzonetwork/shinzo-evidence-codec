@@ -39,28 +39,37 @@ type StorageProof struct {
 // "0x35" (internal/ethapi/api.go:424-433 @ go-ethereum v1.17.10).
 type StorageKey common.Hash
 
-// UnmarshalJSON accepts a 0x-prefixed hex string of up to 32 bytes and left-pads it.
+// UnmarshalJSON reads a JSON string with ParseStorageKey.
 func (k *StorageKey) UnmarshalJSON(input []byte) error {
 	var s string
 	if err := json.Unmarshal(input, &s); err != nil {
 		return err
 	}
+	key, err := ParseStorageKey(s)
+	if err != nil {
+		return err
+	}
+	*k = key
+	return nil
+}
+
+// ParseStorageKey accepts a 0x-prefixed hex string of up to 32 bytes and left-pads it.
+func ParseStorageKey(s string) (StorageKey, error) {
 	digits, ok := strings.CutPrefix(s, "0x")
 	if !ok || digits == "" {
-		return fmt.Errorf("storage key %q: not a 0x-prefixed hex string", s)
+		return StorageKey{}, fmt.Errorf("storage key %q: not a 0x-prefixed hex string", s)
 	}
 	if len(digits)%2 == 1 {
 		digits = "0" + digits
 	}
 	b, err := hex.DecodeString(digits)
 	if err != nil {
-		return fmt.Errorf("storage key %q: %w", s, err)
+		return StorageKey{}, fmt.Errorf("storage key %q: %w", s, err)
 	}
 	if len(b) > common.HashLength {
-		return fmt.Errorf("storage key %q: longer than 32 bytes", s)
+		return StorageKey{}, fmt.Errorf("storage key %q: longer than 32 bytes", s)
 	}
-	*k = StorageKey(common.BytesToHash(b))
-	return nil
+	return StorageKey(common.BytesToHash(b)), nil
 }
 
 // stateProof is the RLP form of a state proof: the account nodes, then each slot with its storage nodes.

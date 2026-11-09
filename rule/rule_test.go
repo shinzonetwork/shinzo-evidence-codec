@@ -25,7 +25,6 @@ import (
 	"github.com/shinzonetwork/shinzo-evidence-codec/merkle"
 	"github.com/shinzonetwork/shinzo-evidence-codec/sig"
 	"github.com/shinzonetwork/shinzo-evidence-codec/statement"
-	"github.com/shinzonetwork/shinzo-evidence-codec/trust"
 )
 
 const (
@@ -37,7 +36,7 @@ const (
 // an honest generator signs. The block is synthetic; its stateRoot and the USD1 supply proof are real (Ethereum block
 // 26307825), so the capture verifies against real state.
 type fixture struct {
-	chain     trust.Chain
+	chain     Config
 	keys      []*secp256k1.PrivateKey // the first three are listed
 	header    types.Header
 	statement statement.Statement
@@ -83,10 +82,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	f := &fixture{
-		chain: trust.Chain{
-			ID: "eip155:1", Family: familyEVM, MaxBlobBytes: 1 << 20,
-			Assets: []trust.Asset{{ID: usd1, From: 0, Settings: []byte(`{"supplySlot": "0x35"}`)}},
-		},
+		chain: Config{Chain: "eip155:1", Required: 2, Assets: []Asset{{ID: usd1, SupplySlot: "0x35"}}},
 		statement: statement.Statement{
 			Chain: "eip155:1", Number: height, ParentNumber: height - 1, Status: statement.StatusFinalized,
 			Extractor: "test", Filter: statement.FilterContractLog, Items: 3,
@@ -103,7 +99,7 @@ func newFixture(t *testing.T) *fixture {
 		seed := sha256.Sum256([]byte{byte(i)})
 		f.keys = append(f.keys, secp256k1.PrivKeyFromBytes(seed[:]))
 	}
-	f.chain.SignerSets = []trust.SignerSet{{From: 0, Required: 2, Keys: []string{f.key(0), f.key(1), f.key(2)}}}
+	f.chain.Signers = []string{f.key(0), f.key(1), f.key(2)}
 	return f
 }
 
@@ -230,15 +226,6 @@ func TestCheck(t *testing.T) {
 			[]string{ReasonEvidence, ReasonEvidence},
 		},
 		{
-			"evidence over the size limit is ignored",
-			func(t *testing.T, f *fixture) (*Block, []Attestation) {
-				f.chain.MaxBlobBytes = uint64(len(f.docs.Evidence[0].Proof)) - 1
-				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
-			},
-			ReasonNoAgreement, nil,
-			[]string{ReasonEvidence, ReasonEvidence},
-		},
-		{
 			"a group below k is not proof-checked",
 			func(t *testing.T, f *fixture) (*Block, []Attestation) {
 				f.docs.Evidence = nil
@@ -314,7 +301,7 @@ func TestCheck(t *testing.T) {
 			[]string{"", ""},
 		},
 		{
-			"a tracked asset without a claim",
+			"a listed asset without a claim",
 			func(t *testing.T, f *fixture) (*Block, []Attestation) {
 				without := f.statement
 				without.Claims = nil
@@ -373,28 +360,6 @@ func TestCheck(t *testing.T) {
 			},
 			ReasonNoAgreement, nil,
 			[]string{ReasonEvidence, ReasonEvidence},
-		},
-		{
-			"documents exactly at the size limit",
-			func(t *testing.T, f *fixture) (*Block, []Attestation) {
-				f.chain.MaxBlobBytes = uint64(max(len(f.docs.Evidence[0].Records), len(f.docs.Evidence[0].Proof), len(f.docs.Captures[0].Proof)))
-				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
-			},
-			"",
-			[]int{0, 1},
-			[]string{"", ""},
-		},
-		{
-			"a capture proof over the size limit",
-			func(t *testing.T, f *fixture) (*Block, []Attestation) {
-				f.chain.MaxBlobBytes = uint64(len(f.docs.Captures[0].Proof)) - 1
-				if uint64(max(len(f.docs.Evidence[0].Records), len(f.docs.Evidence[0].Proof))) > f.chain.MaxBlobBytes {
-					t.Fatal("the evidence must fit under the limit")
-				}
-				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
-			},
-			ReasonNoAgreement, nil,
-			[]string{ReasonCapture, ReasonCapture},
 		},
 		{
 			"capture failures push the group below k",
@@ -529,26 +494,6 @@ func TestCheck(t *testing.T) {
 			[]string{"", ""},
 		},
 		{
-			"a signer set that ended",
-			func(t *testing.T, f *fixture) (*Block, []Attestation) {
-				end := uint64(height - 1)
-				f.chain.SignerSets[0].To = &end
-				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
-			},
-			ReasonNoSignerSet, nil,
-			[]string{ReasonUnlisted, ReasonUnlisted},
-		},
-		{
-			"an asset not yet tracked needs no claim",
-			func(t *testing.T, f *fixture) (*Block, []Attestation) {
-				f.chain.Assets = append(f.chain.Assets, trust.Asset{ID: strings.Repeat("11", 20), From: height + 1, Settings: []byte(`{"supplySlot": "0x1"}`)})
-				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
-			},
-			"",
-			[]int{0, 1},
-			[]string{"", ""},
-		},
-		{
 			"a signer with another count is left out",
 			func(t *testing.T, f *fixture) (*Block, []Attestation) {
 				other := f.statement
@@ -569,16 +514,6 @@ func TestCheck(t *testing.T) {
 			"",
 			[]int{0, 1},
 			[]string{"", ""},
-		},
-		{
-			"no signer set covers the height",
-			func(t *testing.T, f *fixture) (*Block, []Attestation) {
-				f.chain.SignerSets[0].From = height + 1
-				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
-			},
-			ReasonNoSignerSet,
-			nil,
-			[]string{ReasonUnlisted, ReasonUnlisted},
 		},
 	}
 	for _, tc := range cases {
@@ -620,7 +555,7 @@ func TestCheck(t *testing.T) {
 // bsc makes the block a BSC block whose mixHash carries 900 milliseconds, and sets the statement's timestamp to ms.
 func bsc(t *testing.T, f *fixture, ms uint64) {
 	t.Helper()
-	f.chain.ID, f.statement.Chain = "eip155:56", "eip155:56"
+	f.chain.Chain, f.statement.Chain = "eip155:56", "eip155:56"
 	h := f.header
 	h.MixDigest = common.BigToHash(big.NewInt(900))
 	f.setHeader(t, h, ms)

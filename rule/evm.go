@@ -2,7 +2,6 @@ package rule
 
 import (
 	"crypto/sha256"
-	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"regexp"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/shinzonetwork/shinzo-evidence-codec/evm"
 	"github.com/shinzonetwork/shinzo-evidence-codec/statement"
-	"github.com/shinzonetwork/shinzo-evidence-codec/trust"
 )
 
 // eip155ID is an EIP-155 chain ID in CAIP-2 form, the reference in base 10 without leading zeros.
@@ -27,30 +25,20 @@ type evmChain struct {
 	slots map[string]common.Hash // supply slot by asset ID
 }
 
-type evmAssetSettings struct {
-	SupplySlot *evm.StorageKey `json:"supplySlot"`
-}
-
-func newEVM(c trust.Chain) (evmChain, error) {
-	if !eip155ID.MatchString(c.ID) {
-		return evmChain{}, fmt.Errorf("%w: chain %q is not eip155 with a decimal reference", ErrSettings, c.ID)
+func newEVM(c Config) (evmChain, error) {
+	if !eip155ID.MatchString(c.Chain) {
+		return evmChain{}, fmt.Errorf("%w: chain %q is not eip155 with a decimal reference", ErrSettings, c.Chain)
 	}
-	if len(c.Settings) > 0 {
-		return evmChain{}, fmt.Errorf("%w: evm has no chain settings", ErrSettings)
-	}
-	e := evmChain{id: c.ID, slots: make(map[string]common.Hash, len(c.Assets))}
+	e := evmChain{id: c.Chain, slots: make(map[string]common.Hash, len(c.Assets))}
 	for _, a := range c.Assets {
 		if !evmAssetID.MatchString(a.ID) {
 			return evmChain{}, fmt.Errorf("%w: asset %q is not 40 lower-case hex digits", ErrSettings, a.ID)
 		}
-		var s evmAssetSettings
-		if err := jsonv2.Unmarshal(a.Settings, &s, jsonv2.RejectUnknownMembers(true)); err != nil {
+		slot, err := evm.ParseStorageKey(a.SupplySlot)
+		if err != nil {
 			return evmChain{}, fmt.Errorf("%w: asset %s: %w", ErrSettings, a.ID, err)
 		}
-		if s.SupplySlot == nil {
-			return evmChain{}, fmt.Errorf("%w: asset %s has no supplySlot", ErrSettings, a.ID)
-		}
-		e.slots[a.ID] = common.Hash(*s.SupplySlot)
+		e.slots[a.ID] = common.Hash(slot)
 	}
 	return e, nil
 }
@@ -76,7 +64,7 @@ type evmBlock struct {
 	slots  map[string]common.Hash
 }
 
-func (b evmBlock) records(_ trust.Asset, records, proof []byte) (uint64, [sha256.Size]byte, error) {
+func (b evmBlock) records(_ Asset, records, proof []byte) (uint64, [sha256.Size]byte, error) {
 	decoded, root, err := evm.DecodeRecords(records)
 	if err != nil {
 		return 0, root, err
@@ -87,7 +75,7 @@ func (b evmBlock) records(_ trust.Asset, records, proof []byte) (uint64, [sha256
 	return uint64(len(decoded)), root, nil
 }
 
-func (b evmBlock) capture(asset trust.Asset, proof []byte) (string, error) {
+func (b evmBlock) capture(asset Asset, proof []byte) (string, error) {
 	value, err := evm.VerifyStateCapture(b.header.StateRoot, common.HexToAddress(asset.ID), b.slots[asset.ID], proof)
 	if err != nil {
 		return "", err

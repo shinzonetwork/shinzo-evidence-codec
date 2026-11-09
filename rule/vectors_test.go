@@ -23,7 +23,6 @@ import (
 
 	"github.com/shinzonetwork/shinzo-evidence-codec/evm"
 	"github.com/shinzonetwork/shinzo-evidence-codec/statement"
-	"github.com/shinzonetwork/shinzo-evidence-codec/trust"
 )
 
 // vectorNode is what a node answered for one block, saved byte for byte: the block with its transactions, its receipts,
@@ -177,11 +176,7 @@ func checkVectorAccepted(t *testing.T, s statement.Statement, raw, records, proo
 		keys = append(keys, key)
 		listed = append(listed, sign(t, key, s).Signer)
 	}
-	c, err := New(trust.Chain{
-		ID: s.Chain, Family: familyEVM, MaxBlobBytes: 1 << 20,
-		SignerSets: []trust.SignerSet{{From: 0, Required: 2, Keys: listed}},
-		Assets:     []trust.Asset{{ID: usd1, From: 0, Settings: []byte(`{"supplySlot": "0x35"}`)}},
-	})
+	c, err := New(Config{Chain: s.Chain, Signers: listed, Required: 2, Assets: []Asset{{ID: usd1, SupplySlot: "0x35"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
