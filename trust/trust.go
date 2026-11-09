@@ -95,7 +95,7 @@ func Parse(data []byte) (File, error) {
 			return File{}, fmt.Errorf("%w: %q", ErrDuplicateChain, c.ID)
 		}
 		seen[c.ID] = true
-		if err := c.check(); err != nil {
+		if err := c.Validate(); err != nil {
 			return File{}, fmt.Errorf("chain %q: %w", c.ID, err)
 		}
 	}
@@ -154,7 +154,9 @@ func checkFromPresent(data []byte) error {
 	return nil
 }
 
-func (c Chain) check() error {
+// Validate checks one chain entry by the rules Parse applies to each: CAIP-2 syntax, a family, a size limit, contiguous
+// signer sets with valid keys, and unique asset IDs.
+func (c Chain) Validate() error {
 	if !caip2.MatchString(c.ID) {
 		return ErrChainID
 	}
