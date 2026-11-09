@@ -131,16 +131,26 @@ func (f *fixture) key(i int) string {
 	return hex.EncodeToString(f.keys[i].PubKey().SerializeCompressed())
 }
 
-// attest returns key i's attestation over s, signed as defradb signs: DER over the SHA-256 of the statement.
+// attest returns key i's attestation over s.
 func (f *fixture) attest(t *testing.T, i int, s statement.Statement) Attestation {
+	t.Helper()
+	return sign(t, f.keys[i], s)
+}
+
+// sign returns key's attestation over s, signed as defradb signs: DER over the SHA-256 of the statement.
+func sign(t *testing.T, key *secp256k1.PrivateKey, s statement.Statement) Attestation {
 	t.Helper()
 	encoded, err := s.Encode()
 	if err != nil {
 		t.Fatal(err)
 	}
 	hash := sha256.Sum256(encoded)
-	signature := ecdsa.Sign(f.keys[i], hash[:]).Serialize()
-	return Attestation{Signer: f.key(i), SignatureType: sig.TypeES256K, Signature: hex.EncodeToString(signature), Statement: encoded}
+	return Attestation{
+		Signer:        hex.EncodeToString(key.PubKey().SerializeCompressed()),
+		SignatureType: sig.TypeES256K,
+		Signature:     hex.EncodeToString(ecdsa.Sign(key, hash[:]).Serialize()),
+		Statement:     encoded,
+	}
 }
 
 func TestCheck(t *testing.T) {
