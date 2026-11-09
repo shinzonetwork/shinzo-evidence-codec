@@ -12,18 +12,19 @@ import (
 
 func testStatement() Statement {
 	return Statement{
-		Chain:      "eip155:56",
-		Number:     7,
-		Hash:       "0xaa",
-		ParentHash: "0xbb",
-		Timestamp:  8,
-		Status:     StatusFinalized,
-		Extractor:  "x1",
-		Filter:     FilterContractLog,
-		HeaderHash: filled(1),
-		Items:      9,
-		Claims:     []Claim{{Asset: "a1", Count: 2, Root: filled(2)}, {Asset: "b2", Count: 0, Root: filled(3)}},
-		Captures:   []Capture{{Asset: "c3", Value: "1000", ProofHash: filled(4)}, {Asset: "d4", Value: "0", ProofHash: filled(5)}},
+		Chain:        "eip155:56",
+		Number:       7,
+		Hash:         "0xaa",
+		ParentHash:   "0xbb",
+		ParentNumber: 6,
+		Timestamp:    8,
+		Status:       StatusFinalized,
+		Extractor:    "x1",
+		Filter:       FilterContractLog,
+		HeaderHash:   filled(1),
+		Items:        9,
+		Claims:       []Claim{{Asset: "a1", Count: 2, Root: filled(2)}, {Asset: "b2", Count: 0, Root: filled(3)}},
+		Captures:     []Capture{{Asset: "c3", Value: "1000", ProofHash: filled(4)}, {Asset: "d4", Value: "0", ProofHash: filled(5)}},
 	}
 }
 
@@ -38,6 +39,7 @@ func TestEncode(t *testing.T) {
 		"0000000000000007",
 		"0004", str("0xaa"),
 		"0004", str("0xbb"),
+		"0000000000000006",
 		"0000000000000008",
 		"0009", str("finalized"),
 		"0002", str("x1"),

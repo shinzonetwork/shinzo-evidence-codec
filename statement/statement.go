@@ -30,18 +30,19 @@ var (
 // Statement is what a generator attests about one block. Strings are encoded with a uint16 length,
 // integers as uint64 and lists with a uint64 count, all big-endian.
 type Statement struct {
-	Chain      string // CAIP-2 chain ID
-	Number     uint64
-	Hash       string
-	ParentHash string
-	Timestamp  uint64 // milliseconds
-	Status     string
-	Extractor  string
-	Filter     string
-	HeaderHash [sha256.Size]byte // SHA-256 of the raw header
-	Items      uint64            // receipts in the block, on EVM chains
-	Claims     []Claim           // one per tracked asset, including assets with no records
-	Captures   []Capture
+	Chain        string // CAIP-2 chain ID
+	Number       uint64
+	Hash         string
+	ParentHash   string
+	ParentNumber uint64 // skipped slots can put it below Number-1
+	Timestamp    uint64 // milliseconds
+	Status       string
+	Extractor    string
+	Filter       string
+	HeaderHash   [sha256.Size]byte // SHA-256 of the raw header
+	Items        uint64            // receipts in the block, on EVM chains
+	Claims       []Claim           // one per tracked asset, including assets with no records
+	Captures     []Capture
 }
 
 // Claim is what the generator found in the block for one asset.
@@ -69,6 +70,7 @@ func (s Statement) Encode() ([]byte, error) {
 	e.u64(s.Number)
 	e.str(s.Hash)
 	e.str(s.ParentHash)
+	e.u64(s.ParentNumber)
 	e.u64(s.Timestamp)
 	e.str(s.Status)
 	e.str(s.Extractor)
@@ -100,16 +102,17 @@ func Decode(b []byte) (Statement, error) {
 		return Statement{}, fmt.Errorf("%w: %q", ErrDomain, domain)
 	}
 	s := Statement{
-		Chain:      d.str(),
-		Number:     d.u64(),
-		Hash:       d.str(),
-		ParentHash: d.str(),
-		Timestamp:  d.u64(),
-		Status:     d.str(),
-		Extractor:  d.str(),
-		Filter:     d.str(),
-		HeaderHash: d.h32(),
-		Items:      d.u64(),
+		Chain:        d.str(),
+		Number:       d.u64(),
+		Hash:         d.str(),
+		ParentHash:   d.str(),
+		ParentNumber: d.u64(),
+		Timestamp:    d.u64(),
+		Status:       d.str(),
+		Extractor:    d.str(),
+		Filter:       d.str(),
+		HeaderHash:   d.h32(),
+		Items:        d.u64(),
 	}
 	for n := d.u64(); n > 0 && d.err == nil; n-- {
 		s.Claims = append(s.Claims, Claim{Asset: d.str(), Count: d.u64(), Root: d.h32()})
