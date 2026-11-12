@@ -33,12 +33,14 @@ const (
 	ReasonSignature    = "signature does not verify"
 	ReasonStatement    = "statement does not decode"
 	ReasonWrongBlock   = "statement names another chain, height or status"
-	ReasonHeader       = "no held header matches the statement"
+	ReasonHeader       = "the header the statement names is not held"
+	ReasonBadHeader    = "the header the statement names does not match it"
 	ReasonMissingClaim = "a listed asset has no claim"
 	ReasonEmptyClaim   = "a claim with no records has a non-empty root"
 	ReasonBelowK       = "its group has fewer signers than required"
 	ReasonEvidence     = "no held evidence matches a claim"
-	ReasonCapture      = "no held state capture matches a state entry"
+	ReasonCapture      = "a state capture the statement names is not held"
+	ReasonBadCapture   = "a state capture the statement names does not prove its value"
 )
 
 // Why a height holds.
@@ -312,9 +314,9 @@ func (c *Chain) precheck(number uint64, a Attestation, h held) (statement.Statem
 	if s.Chain != c.config.Chain || s.Number != number || s.Status != statement.StatusFinalized {
 		return s, nil, ReasonWrongBlock
 	}
-	checks := c.headerChecks(s, h)
-	if checks == nil {
-		return s, nil, ReasonHeader
+	checks, reason := c.headerChecks(s, h)
+	if reason != "" {
+		return s, nil, reason
 	}
 	claimed := make(map[string]bool, len(s.Claims))
 	for _, cl := range s.Claims {
@@ -331,18 +333,23 @@ func (c *Chain) precheck(number uint64, a Attestation, h held) (statement.Statem
 	return s, checks, ""
 }
 
-// headerChecks returns the family's checks for the first held header that matches s, or nil when none does. Several
-// Header documents can share a hash, and only one need be right.
-func (c *Chain) headerChecks(s statement.Statement, h held) blockChecks {
+// headerChecks returns the family's checks for the held header s names, by block hash and SHA-256. Otherwise the
+// reason is ReasonHeader when no such header is held, which may yet arrive, and ReasonBadHeader when it is held and
+// does not match s, which no later document can change. Several Header documents can share a hash, and only one need
+// be right.
+func (c *Chain) headerChecks(s statement.Statement, h held) (blockChecks, string) {
+	reason := ReasonHeader
 	for i, header := range h.Headers {
 		if header.Hash != s.Hash || h.headerHashes[i] != s.HeaderHash {
 			continue
 		}
-		if checks, err := c.family.header(header.Raw, s); err == nil {
-			return checks
+		checks, err := c.family.header(header.Raw, s)
+		if err == nil {
+			return checks, ""
 		}
+		reason = ReasonBadHeader
 	}
-	return nil
+	return nil, reason
 }
 
 // evidenceHolds reports whether every claim with records has a held Evidence document whose records match the claim
@@ -367,36 +374,44 @@ func (c *Chain) evidenceHolds(m member, evidence []Evidence) bool {
 	return true
 }
 
-// captureHolds reports whether every state entry of a listed asset has a held StateCapture document with its value
-// and proof hash whose proof verifies to that value. proven holds each document's verified value, or "" when it does
-// not verify, so members of one group share the work.
-func (c *Chain) captureHolds(m member, h held, proven map[int]string) bool {
+// captureReason returns "" when every state entry of a listed asset has a held StateCapture document with its value
+// and proof hash whose proof verifies to that value. Otherwise it returns ReasonBadCapture when such a document is held
+// for an entry and its proof does not verify to the value, which no later document can change, and ReasonCapture when
+// one is not held yet. proven holds each document's verified value, or "" when it does not verify, so members of one
+// group share the work.
+func (c *Chain) captureReason(m member, h held, proven map[int]string) string {
+	reason := ""
 	for _, entry := range m.statement.Captures {
 		asset, ok := c.assets[entry.Asset]
 		if !ok {
 			continue
 		}
-		found := false
+		matched, verified := false, false
 		for i, sc := range h.Captures {
 			if sc.BlockHash != m.statement.Hash || sc.Asset != entry.Asset || sc.Value != entry.Value ||
 				h.captureHashes[i] != entry.ProofHash {
 				continue
 			}
+			matched = true
 			value, done := proven[i]
 			if !done {
 				value, _ = m.checks.capture(asset, sc.Proof)
 				proven[i] = value
 			}
 			if value == entry.Value {
-				found = true
+				verified = true
 				break
 			}
 		}
-		if !found {
-			return false
+		if verified {
+			continue
 		}
+		if matched {
+			return ReasonBadCapture
+		}
+		reason = ReasonCapture
 	}
-	return true
+	return reason
 }
 
 // groupKey identifies what a group's members agree on: the block and the claims for listed assets. Strings are quoted,
@@ -424,10 +439,10 @@ func (g *group) dropFailedCaptures(v *Verdict, c *Chain, h held) {
 	proven := make(map[int]string)
 	kept := g.members[:0]
 	for _, m := range g.members {
-		if c.captureHolds(m, h, proven) {
-			kept = append(kept, m)
+		if reason := c.captureReason(m, h, proven); reason != "" {
+			v.Results[m.result].Reason = reason
 		} else {
-			v.Results[m.result].Reason = ReasonCapture
+			kept = append(kept, m)
 		}
 	}
 	g.members = kept

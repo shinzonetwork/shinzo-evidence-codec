@@ -209,6 +209,15 @@ func TestCheck(t *testing.T) {
 				return nil, []Attestation{f.attest(t, 0, s), f.attest(t, 1, s)}
 			},
 			ReasonNoAgreement, nil,
+			[]string{ReasonBadHeader, ReasonBadHeader},
+		},
+		{
+			"the header the statements name is not held",
+			func(t *testing.T, f *fixture) (*Block, []Attestation) {
+				f.docs.Headers = nil
+				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
+			},
+			ReasonNoAgreement, nil,
 			[]string{ReasonHeader, ReasonHeader},
 		},
 		{
@@ -381,7 +390,7 @@ func TestCheck(t *testing.T) {
 			},
 			"",
 			[]int{0, 2},
-			[]string{"", ReasonCapture, ""},
+			[]string{"", ReasonBadCapture, ""},
 		},
 		{
 			"a capture whose proof hash is not the held proof's",
@@ -403,7 +412,7 @@ func TestCheck(t *testing.T) {
 			},
 			"",
 			[]int{0, 1},
-			[]string{"", "", ReasonHeader},
+			[]string{"", "", ReasonBadHeader},
 		},
 		{
 			"a statement with another parent height",
@@ -414,7 +423,7 @@ func TestCheck(t *testing.T) {
 			},
 			"",
 			[]int{0, 1},
-			[]string{"", "", ReasonHeader},
+			[]string{"", "", ReasonBadHeader},
 		},
 		{
 			"a statement with another timestamp",
@@ -425,7 +434,7 @@ func TestCheck(t *testing.T) {
 			},
 			"",
 			[]int{0, 1},
-			[]string{"", "", ReasonHeader},
+			[]string{"", "", ReasonBadHeader},
 		},
 		{
 			"a header with the same time that hashes to another block",
@@ -443,7 +452,7 @@ func TestCheck(t *testing.T) {
 			},
 			"",
 			[]int{0, 1},
-			[]string{"", "", ReasonHeader},
+			[]string{"", "", ReasonBadHeader},
 		},
 		{
 			"BSC milliseconds from mixHash",
@@ -462,7 +471,7 @@ func TestCheck(t *testing.T) {
 				return nil, []Attestation{f.attest(t, 0, f.statement), f.attest(t, 1, f.statement)}
 			},
 			ReasonNoAgreement, nil,
-			[]string{ReasonHeader, ReasonHeader},
+			[]string{ReasonBadHeader, ReasonBadHeader},
 		},
 		{
 			"a statement that is not finalized",
